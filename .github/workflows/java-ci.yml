@@ -1,26 +1,38 @@
-name: Java CI
+name: Run Copilot Prompt
 
 on:
-  push:
-    branches: [ main ]
-  pull_request:
-    branches: [ main ]
+  workflow_dispatch:   # Trigger manually
 
 jobs:
-  build:
+  run-prompt:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v4
+      - name: Checkout Repo
+        uses: actions/checkout@v3
 
-    - name: Set up JDK 17
-      uses: actions/setup-java@v4
-      with:
-        distribution: temurin
-        java-version: '17'
+      - name: Run Copilot Prompt
+        env:
+          COPILOT_TOKEN: ${{ secrets.GITHUB_TOKEN_CUSTOM }}
+        run: |
+          echo "Running Copilot Prompt..."
+          
+          PROMPT="Summarize the purpose of this repository in 5 lines."
+          
+          RESPONSE=$(curl -s \
+            -H "Authorization: Bearer $COPILOT_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d "{\"messages\":[{\"role\":\"user\",\"content\":\"$PROMPT\"}]}" \
+            https://api.githubcopilot.com/chat/completions \
+            | jq -r '.choices[0].message.content')
 
-    - name: Compile
-      run: javac src/Main.java
+          echo "$RESPONSE" > copilot_output.txt
+          echo "Copilot Output Saved to copilot_output.txt"
 
-    - name: Run
-      run: java -cp src Main
+      - name: Commit results
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          git add copilot_output.txt
+          git commit -m "Add Copilot output"
+          git push
