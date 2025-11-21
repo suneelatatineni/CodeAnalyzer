@@ -1,38 +1,59 @@
-name: Run Copilot Prompt
+name: Run AI Prompt and Save Output
 
 on:
-  workflow_dispatch:   # Trigger manually
+  workflow_dispatch:  # manual trigger
+
+permissions:
+  contents: write      # allow committing output
 
 jobs:
-  run-prompt:
+  run-ai:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout Repo
-        uses: actions/checkout@v3
+      - name: Checkout repo
+        uses: actions/checkout@v4
 
-      - name: Run Copilot Prompt
+      - name: Read the prompt
+        id: readprompt
+        run: |
+          PROMPT_CONTENT=$(cat prompt.txt)
+          echo "prompt<<EOF" >> $GITHUB_OUTPUT
+          echo "$PROMPT_CONTENT" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Call OpenAI API
+        id: callai
         env:
-          COPILOT_TOKEN: ${{ secrets.GITHUB_TOKEN_CUSTOM }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
         run: |
-          echo "Running Copilot Prompt..."
-          
-          PROMPT="Summarize the purpose of this repository in 5 lines."
-          
-          RESPONSE=$(curl -s \
-            -H "Authorization: Bearer $COPILOT_TOKEN" \
+          RESPONSE=$(curl -s https://api.openai.com/v1/chat/completions \
             -H "Content-Type: application/json" \
-            -d "{\"messages\":[{\"role\":\"user\",\"content\":\"$PROMPT\"}]}" \
-            https://api.githubcopilot.com/chat/completions \
-            | jq -r '.choices[0].message.content')
+            -H "Authorization: Bearer $OPENAI_API_KEY" \
+            -d "{
+              \"model\": \"gpt-4o-mini\",
+              \"messages\": [{\"role\": \"user\", \"content\": \"${{ steps.readprompt.outputs.prompt }}\"}]
+            }" | jq -r '.choices[0].message.content')
 
-          echo "$RESPONSE" > copilot_output.txt
-          echo "Copilot Output Saved to copilot_output.txt"
+          echo "response<<EOF" >> $GITHUB_OUTPUT
+          echo "$RESPONSE" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
 
-      - name: Commit results
+      - name: Save output to file
         run: |
-          git config user.name "github-actions"
-          git config user.email "github-actions@github.com"
-          git add copilot_output.txt
-          git commit -m "Add Copilot output"
+          mkdir -p ai-output
+          FILE="ai-output/response-$(date +'%Y-%m-%d-%H-%M-%S').md"
+          echo "# Prompt" > $FILE
+          echo "${{ steps.readprompt.outputs.prompt }}" >> $FILE
+          echo "" >> $FILE
+          echo "# Response" >> $FILE
+          echo "${{ steps.callai.outputs.response }}" >> $FILE
+          echo "Saved to $FILE"
+
+      - name: Commit the output
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add ai-output/
+          git commit -m "AI response added"
           git push
