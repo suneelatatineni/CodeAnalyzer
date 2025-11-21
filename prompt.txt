@@ -1,1 +1,1 @@
-Can you explin the java file what it does?
+Explain the purpose of this repository in 5 sentences.
